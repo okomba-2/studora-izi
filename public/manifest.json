@@ -1,0 +1,22 @@
+{
+  "short_name": "Studora",
+  "name": "Studora - Plateforme de Révision Scolaire",
+  "description": "Plateforme moderne de révision et de réussite scolaire. Importez vos documents, obtenez des résumés clairs et révisez avec des quiz intelligents.",
+  "icons": [
+    {
+      "src": "https://img.icons8.com/color/192/000000/graduation-cap.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "https://img.icons8.com/color/512/000000/graduation-cap.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#F8FAFC",
+  "theme_color": "#2563EB",
+  "display": "standalone",
+  "orientation": "portrait"
+}

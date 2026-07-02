@@ -1,0 +1,6 @@
+{
+  "name": "Studora",
+  "description": "Plateforme moderne de révision et de réussite scolaire. Importez vos documents, obtenez des résumés clairs et révisez avec des quiz intelligents.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
