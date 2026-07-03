@@ -136,6 +136,20 @@ export default function App() {
   useEffect(() => {
     if (isLoadingAuth) return;
 
+    // Redirect logged-in user away from landing, login, and register
+    if (currentUser) {
+      if (currentView === 'landing' || currentView === 'login' || currentView === 'register') {
+        if (currentUser.email && adminService.isAdmin(currentUser.email, userProfile)) {
+          navigateTo('admin');
+        } else if (userProfile && userProfile.role) {
+          navigateTo('dashboard');
+        } else {
+          navigateTo('onboarding');
+        }
+        return;
+      }
+    }
+
     // Handle Admin redirects
     if (currentUser && adminService.isAdmin(currentUser.email, userProfile)) {
       if (currentView === 'login' || currentView === 'onboarding' || currentView === 'dashboard') {
