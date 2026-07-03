@@ -6,21 +6,31 @@
 import { motion } from 'motion/react';
 import { Sparkles, ArrowRight, CheckCircle } from 'lucide-react';
 import { playClickSound } from '../utils/audio';
+import { adminService } from '../lib/supabase';
 
 interface CTAProps {
   onNavigate?: (view: string) => void;
   currentUser?: any;
+  userProfile?: any;
 }
 
-export default function CTA({ onNavigate, currentUser }: CTAProps = {}) {
+export default function CTA({ onNavigate, currentUser, userProfile }: CTAProps = {}) {
   const handleCTAClick = () => {
     playClickSound();
     if (currentUser) {
-      if (onNavigate) onNavigate('dashboard');
+      if (adminService.isAdmin(currentUser?.email, userProfile)) {
+        if (onNavigate) onNavigate('admin');
+      } else {
+        if (onNavigate) onNavigate('dashboard');
+      }
     } else {
       if (onNavigate) onNavigate('register');
     }
   };
+
+  const buttonLabel = currentUser
+    ? (adminService.isAdmin(currentUser?.email, userProfile) ? 'Accéder à ma Console Admin' : 'Accéder à mon Tableau de Bord')
+    : 'Créer mon compte gratuitement';
 
   return (
     <section id="cta-section" className="py-24 bg-white relative overflow-hidden">
@@ -64,7 +74,7 @@ export default function CTA({ onNavigate, currentUser }: CTAProps = {}) {
                 onClick={handleCTAClick}
                 className="inline-flex items-center space-x-2 bg-white hover:bg-slate-50 text-blue-600 px-8 py-4 rounded-xl text-base font-extrabold shadow-xl hover:shadow-2xl transition-all duration-300 group cursor-pointer hover:-translate-y-0.5"
               >
-                <span>{currentUser ? 'Accéder à mon Tableau de Bord' : 'Créer mon compte gratuitement'}</span>
+                <span>{buttonLabel}</span>
                 <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
               </button>
               

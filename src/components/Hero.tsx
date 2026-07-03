@@ -7,13 +7,15 @@ import { useState, useRef, useEffect, MouseEvent } from 'react';
 import { motion, useMotionValue, useSpring, useTransform } from 'motion/react';
 import { ArrowRight, Play, Upload, CheckCircle2, Sparkles, Trophy, BookOpen, GraduationCap } from 'lucide-react';
 import { playClickSound } from '../utils/audio';
+import { adminService } from '../lib/supabase';
 
 interface HeroProps {
   onNavigate?: (view: string) => void;
   currentUser?: any;
+  userProfile?: any;
 }
 
-export default function Hero({ onNavigate, currentUser }: HeroProps = {}) {
+export default function Hero({ onNavigate, currentUser, userProfile }: HeroProps = {}) {
   const containerRef = useRef<HTMLDivElement>(null);
   
   // Mouse position hooks for real-time 3D parallax tilt effect on the mockup card
@@ -125,14 +127,18 @@ export default function Hero({ onNavigate, currentUser }: HeroProps = {}) {
                 onClick={() => {
                   playClickSound();
                   if (currentUser) {
-                    if (onNavigate) onNavigate('dashboard');
+                    if (adminService.isAdmin(currentUser?.email, userProfile)) {
+                      if (onNavigate) onNavigate('admin');
+                    } else {
+                      if (onNavigate) onNavigate('dashboard');
+                    }
                   } else {
                     if (onNavigate) onNavigate('register');
                   }
                 }}
                 className="inline-flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-xl text-base font-semibold shadow-xl shadow-blue-600/20 hover:shadow-2xl hover:shadow-blue-600/30 transition-all duration-300 group cursor-pointer hover:-translate-y-0.5 active:translate-y-0"
               >
-                <span>{currentUser ? 'Mon Tableau de Bord' : 'Commencer gratuitement'}</span>
+                <span>{currentUser ? (adminService.isAdmin(currentUser?.email, userProfile) ? 'Ma Console Admin' : 'Mon Tableau de Bord') : 'Commencer gratuitement'}</span>
                 <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform duration-300" />
               </button>
 

@@ -42,9 +42,16 @@ import {
   Share2,
   Search,
   CheckSquare,
-  GraduationCap
+  GraduationCap,
+  Github,
+  Database,
+  Server,
+  Download,
+  Key
 } from 'lucide-react';
-import { authService, dbService, DocumentRow, QuizRow, FlashcardRow, ProgressRow, UserProfile } from '../lib/supabase';
+import GitHubIntegration from './GitHubIntegration';
+
+import { authService, dbService, DocumentRow, QuizRow, FlashcardRow, ProgressRow, UserProfile, isMock, supabaseUrl, supabaseAnonKey } from '../lib/supabase';
 import { playClickSound, playSuccessSound, playFailureSound, setSoundEnabled } from '../utils/audio';
 import { toast } from '../utils/toast';
 
@@ -130,6 +137,42 @@ export default function StudentDashboard({ userProfile: initialProfile, onLogout
   // Sound and Notifications
   const [soundEnabled, setSoundState] = useState(initialProfile.sound_enabled ?? true);
   const [notificationsEnabled, setNotificationState] = useState(initialProfile.notifications_enabled ?? true);
+
+  // Supabase Database Connection states
+  const [dbUrlInput, setDbUrlInput] = useState(() => supabaseUrl || '');
+  const [dbAnonKeyInput, setDbAnonKeyInput] = useState(() => supabaseAnonKey || '');
+
+  const handleSaveSupabaseConfig = (e: React.FormEvent) => {
+    e.preventDefault();
+    playClickSound();
+    
+    const cleanUrl = dbUrlInput.trim();
+    const cleanKey = dbAnonKeyInput.trim();
+    
+    if (cleanUrl && cleanKey) {
+      localStorage.setItem('studora_supabase_url', cleanUrl);
+      localStorage.setItem('studora_supabase_anon_key', cleanKey);
+      playSuccessSound();
+      toast.show('Identifiants Supabase enregistrés ! Reconnexion en cours...', 'success');
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+    } else {
+      toast.show('Veuillez remplir l\'URL et la clé Anon de Supabase.', 'warning');
+    }
+  };
+
+  const handleClearSupabaseConfig = () => {
+    playClickSound();
+    localStorage.removeItem('studora_supabase_url');
+    localStorage.removeItem('studora_supabase_anon_key');
+    setDbUrlInput('');
+    setDbAnonKeyInput('');
+    toast.show('Identifiants Supabase supprimés. Bascule vers le mode local offline-first...', 'info');
+    setTimeout(() => {
+      window.location.reload();
+    }, 1500);
+  };
 
   // Fetch all database records upon initialization
   useEffect(() => {
@@ -333,11 +376,11 @@ export default function StudentDashboard({ userProfile: initialProfile, onLogout
       return;
     }
 
-    // Limit check (5 MB)
-    const maxBytes = 5 * 1024 * 1024;
+    // Limit check (30 MB)
+    const maxBytes = 30 * 1024 * 1024;
     if (file.size > maxBytes) {
       playFailureSound();
-      toast.show('Limite dépassée : Le fichier ne doit pas excéder 5 Mo.', 'warning');
+      toast.show('Limite dépassée : Le fichier ne doit pas excéder 30 Mo.', 'warning');
       return;
     }
 
@@ -736,6 +779,7 @@ export default function StudentDashboard({ userProfile: initialProfile, onLogout
               { id: 'progression', label: 'Progression', icon: BarChart3 },
               { id: 'leaderboard', label: 'Classement', icon: Trophy },
               { id: 'archives', label: 'Archives', icon: Archive, badge: archivedDocs.length > 0 ? archivedDocs.length : undefined },
+              { id: 'github', label: 'Intégration GitHub', icon: Github },
               { id: 'settings', label: 'Paramètres', icon: Settings },
             ].map((item) => {
               const IconComp = item.icon;
@@ -1118,10 +1162,10 @@ export default function StudentDashboard({ userProfile: initialProfile, onLogout
                             </p>
                             <div className="mt-3 flex flex-wrap gap-2 justify-center">
                               <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 bg-slate-100 rounded-md text-slate-500">
-                                Max 20 pages
+                                Max 200 pages
                               </span>
                               <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 bg-slate-100 rounded-md text-slate-500">
-                                Max 5 Mo
+                                Max 30 Mo
                               </span>
                             </div>
                           </div>
@@ -1963,6 +2007,20 @@ export default function StudentDashboard({ userProfile: initialProfile, onLogout
                   </div>
                 )}
 
+                {/* GITHUB INTEGRATION VIEW */}
+                {activeView === 'github' && (
+                  <GitHubIntegration
+                    userProfile={userProfile}
+                    progress={progress}
+                    setProgress={setProgress}
+                    setDocuments={setDocuments}
+                    setQuizzes={setQuizzes}
+                    setFlashcards={setFlashcards}
+                    animateStats={animateStats}
+                    setActiveView={setActiveView}
+                  />
+                )}
+
                 {/* 8. PARAMETRES SUB-VIEW */}
                 {activeView === 'settings' && (
                   <div className="space-y-6 text-left max-w-2xl mx-auto">
@@ -2096,6 +2154,115 @@ export default function StudentDashboard({ userProfile: initialProfile, onLogout
                       </button>
 
                     </form>
+
+                    {/* SUPABASE CONNECTION CARD */}
+                    <div className="bg-white p-6 md:p-8 rounded-[24px] border border-slate-100 shadow-sm space-y-6">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-slate-100">
+                        <div className="flex items-center space-x-2.5">
+                          <div className="p-2 bg-blue-50 text-blue-600 rounded-xl">
+                            <Database className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">Base de données Supabase</h3>
+                            <p className="text-[10px] text-slate-400 font-bold mt-0.5">Assurez la persistance réelle de vos révisions</p>
+                          </div>
+                        </div>
+
+                        <div>
+                          {isMock ? (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-50 text-amber-600 border border-amber-200">
+                              ● Mode Simulation Locale
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-600 border border-emerald-200">
+                              ● Connecté à Supabase
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <p className="text-xs text-slate-400 font-semibold leading-relaxed">
+                        Par défaut, Studora s'exécute dans un environnement de démonstration locale et stocke vos données dans le navigateur.
+                        Pour connecter votre projet Supabase réel et conserver vos données indéfiniment sur tous vos appareils, configurez vos identifiants ci-dessous.
+                      </p>
+
+                      <form onSubmit={handleSaveSupabaseConfig} className="space-y-4">
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-black uppercase text-slate-400 flex items-center space-x-1">
+                            <Server className="w-3.5 h-3.5" />
+                            <span>URL du projet Supabase</span>
+                          </label>
+                          <input
+                            type="url"
+                            required
+                            placeholder="https://xxxxxxxxxxxxxxxxxxxx.supabase.co"
+                            value={dbUrlInput}
+                            onChange={(e) => setDbUrlInput(e.target.value)}
+                            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-hidden focus:border-blue-500"
+                          />
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-black uppercase text-slate-400 flex items-center space-x-1">
+                            <Key className="w-3.5 h-3.5" />
+                            <span>Clé publique anonyme (Anon Key)</span>
+                          </label>
+                          <input
+                            type="password"
+                            required
+                            placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                            value={dbAnonKeyInput}
+                            onChange={(e) => setDbAnonKeyInput(e.target.value)}
+                            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-hidden focus:border-blue-500"
+                          />
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                          <button
+                            type="submit"
+                            className="flex-1 py-3 bg-slate-900 hover:bg-black text-white font-black text-xs rounded-xl transition-all shadow-md cursor-pointer text-center active:scale-98"
+                          >
+                            Enregistrer et Connecter Supabase
+                          </button>
+
+                          {(!isMock || localStorage.getItem('studora_supabase_url')) && (
+                            <button
+                              type="button"
+                              onClick={handleClearSupabaseConfig}
+                              className="py-3 px-4 bg-red-50 hover:bg-red-100 text-red-600 border border-red-100 font-black text-xs rounded-xl transition-all cursor-pointer text-center"
+                            >
+                              Déconnecter
+                            </button>
+                          )}
+                        </div>
+                      </form>
+
+                      {/* SQL SCRIPT CARD FOR SETUP */}
+                      <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-[10px] font-black uppercase text-slate-500 flex items-center space-x-1.5">
+                            <Download className="w-4 h-4 text-slate-400" />
+                            <span>Initialiser vos tables Supabase</span>
+                          </h4>
+                          <span className="text-[8px] font-black bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">
+                            SQL Editor
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 font-semibold leading-relaxed">
+                          Pour que votre base de données fonctionne avec Studora, vous devez créer les tables requises. Un script SQL complet prêt à l'emploi est disponible à la racine du projet dans le fichier :
+                          <code className="ml-1 bg-slate-100 px-1 py-0.5 rounded font-mono text-slate-600">supabase_schema.sql</code>.
+                        </p>
+                        <div className="pt-1 text-[10px] font-bold text-slate-400 leading-normal">
+                          Pour l'appliquer :
+                          <ol className="list-decimal pl-4 space-y-0.5 mt-1 font-semibold">
+                            <li>Ouvrez votre console de projet Supabase</li>
+                            <li>Allez dans l'onglet <strong className="text-slate-500">SQL Editor</strong> &gt; <strong className="text-slate-500">New query</strong></li>
+                            <li>Collez le contenu de <code className="bg-slate-100 px-1 rounded">supabase_schema.sql</code> et cliquez sur <strong className="text-slate-500">Run</strong></li>
+                          </ol>
+                        </div>
+                      </div>
+                    </div>
+
                   </div>
                 )}
 

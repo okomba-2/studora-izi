@@ -22,8 +22,9 @@ import LoginView from './components/LoginView';
 import RegisterView from './components/RegisterView';
 import OnboardingView from './components/OnboardingView';
 import StudentDashboard from './components/StudentDashboard';
+import AdminDashboard from './components/AdminDashboard';
 
-import { authService, UserProfile } from './lib/supabase';
+import { authService, adminService, UserProfile } from './lib/supabase';
 import { playClickSound, playSuccessSound } from './utils/audio';
 import { toast } from './utils/toast';
 
@@ -45,6 +46,8 @@ export default function App() {
         setCurrentView('onboarding');
       } else if (hash === '#/dashboard') {
         setCurrentView('dashboard');
+      } else if (hash === '#/admin') {
+        setCurrentView('admin');
       } else {
         setCurrentView('landing');
       }
@@ -58,24 +61,66 @@ export default function App() {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  // 2. Load User Profile on Auth Change
+  // 2. Load User Profile on Init & Auth Change
   useEffect(() => {
+    let active = true;
+    setIsLoadingAuth(true);
+
+    const checkInitialSession = async () => {
+      try {
+        const user = await authService.getCurrentUser();
+        if (!active) return;
+        if (user) {
+          const profile = await authService.getProfile(user.id);
+          if (active) {
+            setCurrentUser(user);
+            setUserProfile(profile);
+          }
+        } else {
+          if (active) {
+            setCurrentUser(null);
+            setUserProfile(null);
+          }
+        }
+      } catch (err) {
+        console.error("Erreur lors de la vérification initiale de session:", err);
+      } finally {
+        if (active) {
+          setIsLoadingAuth(false);
+        }
+      }
+    };
+
+    checkInitialSession();
+
     const unsubscribe = authService.onAuthStateChange(async (user) => {
-      setCurrentUser(user);
+      if (!active) return;
       if (user) {
         try {
           const profile = await authService.getProfile(user.id);
-          setUserProfile(profile);
+          if (active) {
+            setCurrentUser(user);
+            setUserProfile(profile);
+          }
         } catch (err) {
           console.error('Erreur de chargement du profil:', err);
+          if (active) {
+            setCurrentUser(user);
+            setUserProfile(null);
+          }
         }
       } else {
-        setUserProfile(null);
+        if (active) {
+          setCurrentUser(null);
+          setUserProfile(null);
+        }
       }
-      setIsLoadingAuth(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      active = false;
+      unsubscribe();
+    };
   }, []);
 
   // 3. Navigation helper to update the hash
@@ -87,18 +132,40 @@ export default function App() {
     }
   };
 
-  // 4. Guards check on sensitive dashboard/onboarding routes
+  // 4. Guards check on sensitive dashboard/onboarding/admin routes
   useEffect(() => {
     if (isLoadingAuth) return;
+
+    // Handle Admin redirects
+    if (currentUser && adminService.isAdmin(currentUser.email, userProfile)) {
+      if (currentView === 'login' || currentView === 'onboarding' || currentView === 'dashboard') {
+        navigateTo('admin');
+        return;
+      }
+    }
+
+    if (currentView === 'admin' && (!currentUser || !adminService.isAdmin(currentUser.email, userProfile))) {
+      toast.show('Accès réservé aux administrateurs.', 'warning');
+      navigateTo('login');
+      return;
+    }
 
     if ((currentView === 'onboarding' || currentView === 'dashboard') && !currentUser) {
       toast.show('Veuillez vous connecter pour accéder à cet espace.', 'info');
       navigateTo('login');
+      return;
     }
 
-    if (currentView === 'dashboard' && userProfile && !userProfile.role) {
-      toast.show('Veuillez terminer la configuration de votre profil.', 'info');
-      navigateTo('onboarding');
+    if (currentView === 'dashboard' && currentUser) {
+      if (!userProfile) {
+        toast.show("Profil introuvable ou en cours de création. Redirection vers l'onboarding...", 'warning');
+        navigateTo('onboarding');
+        return;
+      }
+      if (!userProfile.role) {
+        toast.show('Veuillez terminer la configuration de votre profil.', 'info');
+        navigateTo('onboarding');
+      }
     }
   }, [currentView, currentUser, userProfile, isLoadingAuth]);
 
@@ -110,7 +177,10 @@ export default function App() {
       const profile = await authService.getProfile(user.id);
       setUserProfile(profile);
       
-      if (profile && profile.role) {
+      if (user.email && adminService.isAdmin(user.email, profile)) {
+        toast.show('Bienvenue sur la console d’administration Studora !', 'success');
+        navigateTo('admin');
+      } else if (profile && profile.role) {
         toast.show('Bienvenue de retour sur Studora !', 'success');
         navigateTo('dashboard');
       } else {
@@ -199,12 +269,21 @@ export default function App() {
         }
         return null;
 
+      case 'admin':
+        return (
+          <AdminDashboard
+            currentUser={currentUser}
+            onLogout={handleLogout}
+            onNavigate={navigateTo}
+          />
+        );
+
       case 'landing':
       default:
         return (
           <>
             {/* Landing page layout sections */}
-            <Hero onNavigate={navigateTo} currentUser={currentUser} />
+            <Hero onNavigate={navigateTo} currentUser={currentUser} userProfile={userProfile} />
             <Stats />
             <HowItWorks />
             <Features />
@@ -212,7 +291,7 @@ export default function App() {
             <Leaderboard />
             <Pricing onNavigate={navigateTo} />
             <FAQ />
-            <CTA onNavigate={navigateTo} currentUser={currentUser} />
+            <CTA onNavigate={navigateTo} currentUser={currentUser} userProfile={userProfile} />
             <Footer />
           </>
         );
@@ -224,10 +303,11 @@ export default function App() {
       {/* Dynamic light gradient overlays */}
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(37,99,235,0.04),transparent_50%)] pointer-events-none" />
 
-      {/* Render sticky Navbar except inside login, register, or onboarding states for clean minimalist UI */}
-      {currentView !== 'login' && currentView !== 'register' && currentView !== 'onboarding' && currentView !== 'dashboard' && (
+      {/* Render sticky Navbar except inside login, register, onboarding, or admin states for clean minimalist UI */}
+      {currentView !== 'login' && currentView !== 'register' && currentView !== 'onboarding' && currentView !== 'dashboard' && currentView !== 'admin' && (
         <Navbar
           currentUser={currentUser}
+          userProfile={userProfile}
           currentView={currentView}
           onNavigate={navigateTo}
           onLogout={handleLogout}

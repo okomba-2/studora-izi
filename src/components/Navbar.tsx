@@ -8,15 +8,17 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Menu, X, ArrowRight, GraduationCap } from 'lucide-react';
 import { playClickSound } from '../utils/audio';
 import { toast } from '../utils/toast';
+import { adminService, UserProfile } from '../lib/supabase';
 
 interface NavbarProps {
   currentUser: any;
+  userProfile?: UserProfile | null;
   currentView: string;
   onNavigate: (view: string) => void;
   onLogout: () => void;
 }
 
-export default function Navbar({ currentUser, currentView, onNavigate, onLogout }: NavbarProps) {
+export default function Navbar({ currentUser, userProfile, currentView, onNavigate, onLogout }: NavbarProps) {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -129,11 +131,15 @@ export default function Navbar({ currentUser, currentView, onNavigate, onLogout 
                     id="nav-btn-dashboard"
                     onClick={() => {
                       playClickSound();
-                      onNavigate('dashboard');
+                      if (currentUser?.email && adminService.isAdmin(currentUser.email, userProfile)) {
+                        onNavigate('admin');
+                      } else {
+                        onNavigate('dashboard');
+                      }
                     }}
                     className="px-4 py-2 text-sm font-bold text-blue-600 hover:text-blue-700 transition-colors duration-200 cursor-pointer"
                   >
-                    Tableau de Bord
+                    {currentUser?.email && adminService.isAdmin(currentUser.email, userProfile) ? 'Console Admin' : 'Tableau de Bord'}
                   </button>
                   <button
                     id="nav-btn-logout"
@@ -225,11 +231,15 @@ export default function Navbar({ currentUser, currentView, onNavigate, onLogout 
                         onClick={() => {
                           playClickSound();
                           setIsMobileMenuOpen(false);
-                          onNavigate('dashboard');
+                          if (currentUser?.email && adminService.isAdmin(currentUser.email, userProfile)) {
+                            onNavigate('admin');
+                          } else {
+                            onNavigate('dashboard');
+                          }
                         }}
                         className="w-full text-center py-3 text-base font-bold text-blue-600 hover:text-blue-700 transition-all duration-200"
                       >
-                        Tableau de Bord
+                        {currentUser?.email && adminService.isAdmin(currentUser.email, userProfile) ? 'Console Admin' : 'Tableau de Bord'}
                       </button>
                       <button
                         id="mobile-nav-btn-logout"

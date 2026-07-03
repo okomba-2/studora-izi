@@ -5,12 +5,18 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-// Read from environment variables
-const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
-const supabaseAnonKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
+// Read from environment variables, fallback to localStorage
+let envUrl = (import.meta as any).env?.VITE_SUPABASE_URL || '';
+let envKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || '';
+
+if (envUrl === 'your_supabase_project_url') envUrl = '';
+if (envKey === 'your_supabase_anon_key') envKey = '';
+
+export const supabaseUrl = envUrl || localStorage.getItem('studora_supabase_url') || '';
+export const supabaseAnonKey = envKey || localStorage.getItem('studora_supabase_anon_key') || '';
 
 // Check if credentials are valid/provided
-export const isMock = !supabaseUrl || !supabaseAnonKey || supabaseUrl === 'your_supabase_project_url' || supabaseAnonKey === 'your_supabase_anon_key';
+export const isMock = !supabaseUrl || !supabaseAnonKey;
 
 // Interface matching the profile structure in Supabase
 export interface UserProfile {
@@ -127,11 +133,11 @@ export const authService = {
       
       if (error) throw error;
       
-      // Immediately create a profile row for the new user if they successfully sign up
+      // Immediately create or update a profile row for the new user if they successfully sign up
       if (data?.user) {
         const { error: profileError } = await supabase
           .from('profiles')
-          .insert([
+          .upsert([
             {
               id: data.user.id,
               firstname,
@@ -149,7 +155,7 @@ export const authService = {
               created_at: new Date().toISOString()
             }
           ]);
-        if (profileError) console.error('Error creating profile row:', profileError);
+        if (profileError) console.error('Error creating/updating profile row:', profileError);
       }
       
       return data;
@@ -198,6 +204,60 @@ export const authService = {
     }
   },
 
+  // Verify OTP (for email confirmation code)
+  async verifyOtp(email: string, token: string) {
+    if (!isMock && supabase) {
+      const { data, error } = await supabase.auth.verifyOtp({
+        email,
+        token,
+        type: 'signup',
+      });
+      if (error) throw error;
+      
+      // Load and return user profile
+      if (data?.user) {
+        try {
+          const profile = await authService.getProfile(data.user.id);
+          return { user: data.user, profile };
+        } catch (e) {
+          console.error('Error fetching profile after OTP verification:', e);
+        }
+      }
+      return data;
+    } else {
+      // Mock OTP verification
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      const users = getMockData<MockUser[]>(STORAGE_KEYS.USERS, []);
+      const user = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
+      if (!user) throw new Error("Aucun utilisateur trouvé avec cet e-mail.");
+      
+      const sessionUser = { id: user.id, email: user.email, firstname: user.firstname, lastname: user.lastname };
+      setMockData(STORAGE_KEYS.CURRENT_USER, sessionUser);
+      authListeners.forEach(listener => listener('SIGNED_IN', { user: sessionUser }));
+      
+      const profiles = getMockData<Record<string, UserProfile>>(STORAGE_KEYS.PROFILES, {});
+      return { user: sessionUser, profile: profiles[user.id] };
+    }
+  },
+
+  // Resend confirmation email / OTP
+  async resendOtp(email: string) {
+    if (!isMock && supabase) {
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email,
+        options: {
+          emailRedirectTo: window.location.origin
+        }
+      });
+      if (error) throw error;
+      return true;
+    } else {
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      return true;
+    }
+  },
+
   // Sign In with password
   async signIn(email: string, password: string) {
     if (!isMock && supabase) {
@@ -210,9 +270,52 @@ export const authService = {
     } else {
       // Mock SignIn
       await new Promise((resolve) => setTimeout(resolve, 800)); // Simulate network lag
+      
+      const targetEmail = email.toLowerCase();
+      const isAdminEmail = targetEmail === 'okomba500@gmail.com' || targetEmail === 'okombacontact@gmail.com';
+      
+      // Auto-seed/update requested admin user if they try to log in (accept any password)
+      if (isAdminEmail) {
+        const users = getMockData<MockUser[]>(STORAGE_KEYS.USERS, []);
+        const adminId = targetEmail === 'okomba500@gmail.com' ? 'admin-user-id-500' : 'admin-user-id-contact';
+        
+        const existingUserIndex = users.findIndex(u => u.email.toLowerCase() === targetEmail);
+        if (existingUserIndex === -1) {
+          users.push({
+            id: adminId,
+            email: targetEmail,
+            password: password, // set password to whatever they entered so it matches
+            firstname: 'Divin',
+            lastname: 'Okomba'
+          });
+        } else {
+          users[existingUserIndex].password = password; // update password to whatever they entered so it matches
+        }
+        setMockData(STORAGE_KEYS.USERS, users);
+        
+        const profiles = getMockData<Record<string, UserProfile>>(STORAGE_KEYS.PROFILES, {});
+        profiles[adminId] = {
+          id: adminId,
+          firstname: 'Divin',
+          lastname: 'Okomba',
+          email: targetEmail,
+          role: 'admin',
+          level: 'Super Admin',
+          school: 'Studora HQ',
+          city: 'Paris',
+          goal: 'Gérer la plateforme',
+          daily_study_time: '24h',
+          sound_enabled: true,
+          notifications_enabled: true,
+          dark_mode: false,
+          created_at: profiles[adminId]?.created_at || new Date().toISOString()
+        };
+        setMockData(STORAGE_KEYS.PROFILES, profiles);
+      }
+
       const users = getMockData<MockUser[]>(STORAGE_KEYS.USERS, []);
       const user = users.find(
-        (u) => u.email.toLowerCase() === email.toLowerCase() && u.password === password
+        (u) => u.email.toLowerCase() === targetEmail && u.password === password
       );
 
       if (!user) {
@@ -311,7 +414,18 @@ export const authService = {
   // Get current user profile
   async getProfile(userId: string): Promise<UserProfile | null> {
     if (!isMock && supabase) {
-      const { data, error } = await supabase
+      // Fetch auth user first to verify if they are a hardcoded admin
+      let authEmail = '';
+      try {
+        const { data: userObj } = await supabase.auth.getUser();
+        authEmail = userObj?.user?.email?.trim().toLowerCase() || '';
+      } catch (err) {
+        console.error('Error fetching auth user email:', err);
+      }
+      
+      const isEmailAdmin = authEmail === 'okomba500@gmail.com' || authEmail === 'okombacontact@gmail.com';
+
+      let { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
@@ -322,17 +436,18 @@ export const authService = {
         if (error.code === 'PGRST116') {
           const { data: userObj } = await supabase.auth.getUser();
           if (userObj?.user) {
+            const isCurrentEmailAdmin = userObj.user.email?.toLowerCase() === 'okomba500@gmail.com' || userObj.user.email?.toLowerCase() === 'okombacontact@gmail.com';
             const newProfile: Partial<UserProfile> = {
               id: userId,
-              firstname: userObj.user.user_metadata?.firstname || '',
-              lastname: userObj.user.user_metadata?.lastname || '',
+              firstname: userObj.user.user_metadata?.firstname || 'Admin',
+              lastname: userObj.user.user_metadata?.lastname || 'Studora',
               email: userObj.user.email || '',
-              role: '',
-              level: '',
-              school: '',
-              city: '',
-              goal: '',
-              daily_study_time: '',
+              role: isCurrentEmailAdmin ? 'admin' : '',
+              level: isCurrentEmailAdmin ? 'Super Admin' : '',
+              school: isCurrentEmailAdmin ? 'Studora HQ' : '',
+              city: 'Paris',
+              goal: isCurrentEmailAdmin ? 'Gérer la plateforme' : '',
+              daily_study_time: isCurrentEmailAdmin ? '24h' : '',
               sound_enabled: true,
               notifications_enabled: true,
               dark_mode: false,
@@ -343,17 +458,110 @@ export const authService = {
               .insert([newProfile])
               .select()
               .single();
-            if (!createErr) return created;
+            if (!createErr && created) {
+              // Force values for admin even on fresh creation
+              if (isEmailAdmin || isCurrentEmailAdmin) {
+                created.role = 'admin';
+                created.level = 'Super Admin';
+              }
+              return created;
+            }
           }
         }
+        
         console.error('Error fetching profile from Supabase:', error);
+        
+        // Fallback for admin if query fails or profile is missing
+        if (isEmailAdmin) {
+          return {
+            id: userId,
+            firstname: 'Divin',
+            lastname: 'Okomba',
+            email: authEmail || 'okombacontact@gmail.com',
+            role: 'admin',
+            level: 'Super Admin',
+            school: 'Studora HQ',
+            city: 'Paris',
+            goal: 'Gérer la plateforme',
+            daily_study_time: '24h',
+            sound_enabled: true,
+            notifications_enabled: true,
+            dark_mode: false,
+            created_at: new Date().toISOString()
+          };
+        }
         return null;
       }
+      
+      const isProfileEmailAdmin = data?.email?.trim().toLowerCase() === 'okomba500@gmail.com' || data?.email?.trim().toLowerCase() === 'okombacontact@gmail.com';
+      const shouldBeAdmin = isEmailAdmin || isProfileEmailAdmin;
+
+      if (shouldBeAdmin) {
+        // Try updating the database profile to admin just in case
+        try {
+          await supabase
+            .from('profiles')
+            .update({
+              email: authEmail || data?.email || '',
+              role: 'admin',
+              level: 'Super Admin',
+              school: 'Studora HQ',
+              goal: 'Gérer la plateforme',
+              daily_study_time: '24h'
+            })
+            .eq('id', userId);
+        } catch (updateErr) {
+          console.warn("Could not write admin role to Supabase, bypassing using frontend forced override:", updateErr);
+        }
+
+        // Force local fields to make absolutely certain they pass the admin checks
+        if (data) {
+          data.role = 'admin';
+          data.level = 'Super Admin';
+          data.school = 'Studora HQ';
+          data.goal = 'Gérer la plateforme';
+          data.daily_study_time = '24h';
+          if (authEmail) {
+            data.email = authEmail;
+          }
+        }
+      }
+      
       return data;
     } else {
       // Mock Profile
       const profiles = getMockData<Record<string, UserProfile>>(STORAGE_KEYS.PROFILES, {});
-      return profiles[userId] || null;
+      let profile = profiles[userId] || null;
+      
+      const currentUser = getMockData<MockUser | null>(STORAGE_KEYS.CURRENT_USER, null);
+      const isUserAdmin = currentUser?.email?.trim().toLowerCase() === 'okomba500@gmail.com' || currentUser?.email?.trim().toLowerCase() === 'okombacontact@gmail.com';
+      
+      if (!profile && isUserAdmin) {
+        profile = {
+          id: userId,
+          firstname: 'Divin',
+          lastname: 'Okomba',
+          email: currentUser?.email || 'okombacontact@gmail.com',
+          role: 'admin',
+          level: 'Super Admin',
+          school: 'Studora HQ',
+          city: 'Paris',
+          goal: 'Gérer la plateforme',
+          daily_study_time: '24h',
+          sound_enabled: true,
+          notifications_enabled: true,
+          dark_mode: false,
+          created_at: new Date().toISOString()
+        };
+        profiles[userId] = profile;
+        setMockData(STORAGE_KEYS.PROFILES, profiles);
+      } else if (profile && (profile.email?.trim().toLowerCase() === 'okomba500@gmail.com' || profile.email?.trim().toLowerCase() === 'okombacontact@gmail.com' || isUserAdmin)) {
+        profile.role = 'admin';
+        profile.level = 'Super Admin';
+        profile.school = 'Studora HQ';
+        profile.goal = 'Gérer la plateforme';
+      }
+      return profile;
     }
   },
 
@@ -883,6 +1091,206 @@ export const dbService = {
         { name: 'Vous', score: 420, level: 'Étoile montante', isCurrentUser: true },
         { name: 'Nicolas Roux', score: 380, level: 'Novice enthousiaste' },
       ];
+    }
+  }
+};
+
+// --------------------------------------------------
+// ADMIN SERVICE FOR STATISTICS & ACCOUNT MANAGEMENT
+// --------------------------------------------------
+export const adminService = {
+  // Check if email matches designated admin credentials or profile role indicates admin rights
+  isAdmin(email?: string | any | null, profile?: UserProfile | null): boolean {
+    let rawEmail = '';
+    if (email) {
+      if (typeof email === 'string') {
+        rawEmail = email;
+      } else if (typeof email === 'object') {
+        rawEmail = email.email || email.user_metadata?.email || '';
+      }
+    }
+    const trimmedEmail = (rawEmail || profile?.email || '')?.trim().toLowerCase();
+    const isHardcodedAdmin = trimmedEmail === 'okomba500@gmail.com' || trimmedEmail === 'okombacontact@gmail.com';
+    const isProfileAdmin = profile?.role === 'admin' || profile?.level === 'Super Admin' || (profile?.email?.trim().toLowerCase() === 'okomba500@gmail.com' || profile?.email?.trim().toLowerCase() === 'okombacontact@gmail.com');
+    return !!(isHardcodedAdmin || isProfileAdmin);
+  },
+
+  // Save custom credentials dynamically
+  saveCredentials(url: string, key: string) {
+    localStorage.setItem('studora_supabase_url', url);
+    localStorage.setItem('studora_supabase_anon_key', key);
+    window.location.reload();
+  },
+
+  // Clear credentials to revert to mock mode
+  clearCredentials() {
+    localStorage.removeItem('studora_supabase_url');
+    localStorage.removeItem('studora_supabase_anon_key');
+    window.location.reload();
+  },
+
+  // Load complete dashboard data: users, consumption, documents, quizzes, and stats
+  async getAdminData() {
+    if (!isMock && supabase) {
+      try {
+        const { data: profiles, error: pErr } = await supabase.from('profiles').select('*');
+        if (pErr) throw pErr;
+        
+        const { data: documents, error: dErr } = await supabase.from('documents').select('*');
+        const { data: quizzes, error: qErr } = await supabase.from('quizzes').select('*');
+        const { data: flashcards, error: fErr } = await supabase.from('flashcards').select('*');
+        const { data: progress, error: prErr } = await supabase.from('progress').select('*');
+
+        return {
+          profiles: profiles || [],
+          documents: documents || [],
+          quizzes: quizzes || [],
+          flashcards: flashcards || [],
+          progress: progress || []
+        };
+      } catch (err) {
+        console.error('Error in getAdminData from real Supabase:', err);
+        throw err;
+      }
+    } else {
+      // High-Fidelity Mock Admin Data
+      await new Promise(resolve => setTimeout(resolve, 800));
+
+      // 1. Seed simulated users if they don't exist yet in mock db
+      const mockUsers = getMockData<MockUser[]>(STORAGE_KEYS.USERS, []);
+      const mockProfiles = getMockData<Record<string, UserProfile>>(STORAGE_KEYS.PROFILES, {});
+      
+      const seedUsers = [
+        { id: 'usr-1', email: 'sophie.dubois@ens.fr', firstname: 'Sophie', lastname: 'Dubois', level: 'L2 Biologie', school: 'ENS Lyon', city: 'Lyon' },
+        { id: 'usr-2', email: 'lucas.bernard@polytechnique.edu', firstname: 'Lucas', lastname: 'Bernard', level: 'M1 Physique', school: 'X Polytechnique', city: 'Palaiseau' },
+        { id: 'usr-3', email: 'chloe.martin@sorbonne.fr', firstname: 'Chloé', lastname: 'Martin', level: 'L3 Histoire', school: 'Sorbonne Université', city: 'Paris' },
+        { id: 'usr-4', email: 'antoine.morel@dauphine.eu', firstname: 'Antoine', lastname: 'Morel', level: 'L1 Économie', school: 'Université Paris-Dauphine', city: 'Paris' },
+        { id: 'usr-5', email: 'julie.faure@sciencepo.fr', firstname: 'Julie', lastname: 'Faure', level: 'M2 Droit', school: 'Sciences Po', city: 'Paris' },
+      ];
+
+      seedUsers.forEach(u => {
+        if (!mockUsers.some(ex => ex.id === u.id)) {
+          mockUsers.push({ id: u.id, email: u.email, password: 'password123', firstname: u.firstname, lastname: u.lastname });
+          mockProfiles[u.id] = {
+            id: u.id,
+            firstname: u.firstname,
+            lastname: u.lastname,
+            email: u.email,
+            role: 'student',
+            level: u.level,
+            school: u.school,
+            city: u.city,
+            goal: 'Réussir mes examens',
+            daily_study_time: '2h',
+            sound_enabled: true,
+            notifications_enabled: true,
+            dark_mode: false,
+            created_at: new Date(Date.now() - Math.random() * 15 * 86400000).toISOString()
+          };
+        }
+      });
+      setMockData(STORAGE_KEYS.USERS, mockUsers);
+      setMockData(STORAGE_KEYS.PROFILES, mockProfiles);
+
+      // 2. Seed documents
+      let mockDocs = getMockData<DocumentRow[]>(DB_MOCK_KEYS.DOCUMENTS, []);
+      if (mockDocs.length < 5) {
+        mockDocs = [
+          { id: 'd-1', user_id: 'usr-1', name: 'Physiologie_Animale_L2.pdf', size: '4.2 MB', type: 'PDF', status: 'ready', archived: false, created_at: new Date(Date.now() - 2 * 86400000).toISOString() },
+          { id: 'd-2', user_id: 'usr-1', name: 'Biologie_Moleculaire_Cours.pdf', size: '2.8 MB', type: 'PDF', status: 'ready', archived: false, created_at: new Date(Date.now() - 1 * 86400000).toISOString() },
+          { id: 'd-3', user_id: 'usr-2', name: 'Mecanique_Quantique_Notes.pdf', size: '1.5 MB', type: 'PDF', status: 'ready', archived: false, created_at: new Date(Date.now() - 3 * 86400000).toISOString() },
+          { id: 'd-4', user_id: 'usr-3', name: 'Histoire_Grecque_L3.pdf', size: '6.1 MB', type: 'PDF', status: 'ready', archived: false, created_at: new Date(Date.now() - 5 * 86400000).toISOString() },
+          { id: 'd-5', user_id: 'usr-4', name: 'Microeconomie_Introduction.pdf', size: '3.3 MB', type: 'PDF', status: 'ready', archived: false, created_at: new Date(Date.now() - 4 * 86400000).toISOString() },
+        ];
+        setMockData(DB_MOCK_KEYS.DOCUMENTS, mockDocs);
+      }
+
+      // 3. Seed quizzes
+      let mockQuizzes = getMockData<QuizRow[]>(DB_MOCK_KEYS.QUIZZES, []);
+      if (mockQuizzes.length < 3) {
+        mockQuizzes = [
+          { id: 'q-1', user_id: 'usr-1', document_id: 'd-1', title: 'Quiz Système Endocrinien', score: 8, max_score: 10, completed: true, created_at: new Date(Date.now() - 1.5 * 86400000).toISOString(), questions: [] },
+          { id: 'q-2', user_id: 'usr-2', document_id: 'd-3', title: 'Quiz Équation de Schrödinger', score: 9, max_score: 10, completed: true, created_at: new Date(Date.now() - 2 * 86400000).toISOString(), questions: [] },
+          { id: 'q-3', user_id: 'usr-3', document_id: 'd-4', title: 'Quiz Athènes classique', score: 7, max_score: 10, completed: true, created_at: new Date(Date.now() - 4 * 86400000).toISOString(), questions: [] },
+        ];
+        setMockData(DB_MOCK_KEYS.QUIZZES, mockQuizzes);
+      }
+
+      // 4. Seed flashcards
+      let mockFlashcards = getMockData<FlashcardRow[]>(DB_MOCK_KEYS.FLASHCARDS, []);
+      if (mockFlashcards.length < 3) {
+        mockFlashcards = [
+          { id: 'f-1', user_id: 'usr-1', front: 'Hormone polypeptidique', back: 'Hormone composée de chaînes d\'acides aminés', created_at: new Date().toISOString() },
+          { id: 'f-2', user_id: 'usr-1', front: 'Adrénaline', back: 'Secrétée par les glandes médullosurrénales', created_at: new Date().toISOString() },
+          { id: 'f-3', user_id: 'usr-2', front: 'Dualité onde-corpuscule', back: 'Toute matière présente des propriétés ondulatoires et de particule', created_at: new Date().toISOString() },
+        ];
+        setMockData(DB_MOCK_KEYS.FLASHCARDS, mockFlashcards);
+      }
+
+      // 5. Seed progress
+      const mockProgress = getMockData<Record<string, ProgressRow>>(DB_MOCK_KEYS.PROGRESS, {});
+      seedUsers.forEach(u => {
+        if (!mockProgress[u.id]) {
+          mockProgress[u.id] = {
+            id: 'p-' + u.id,
+            user_id: u.id,
+            xp: Math.floor(Math.random() * 2000) + 400,
+            level: 'Étudiant d\'élite',
+            streak: Math.floor(Math.random() * 12) + 3,
+            hours_studied: Number((Math.random() * 20 + 5).toFixed(1)),
+            daily_goal_pct: Math.floor(Math.random() * 100),
+            last_active: new Date().toISOString(),
+          };
+        }
+      });
+      setMockData(DB_MOCK_KEYS.PROGRESS, mockProgress);
+
+      const allProfiles = Object.values(getMockData<Record<string, UserProfile>>(STORAGE_KEYS.PROFILES, {}));
+      const allDocs = getMockData<DocumentRow[]>(DB_MOCK_KEYS.DOCUMENTS, []);
+      const allQuizzes = getMockData<QuizRow[]>(DB_MOCK_KEYS.QUIZZES, []);
+      const allFlashcards = getMockData<FlashcardRow[]>(DB_MOCK_KEYS.FLASHCARDS, []);
+      const allProgress = Object.values(getMockData<Record<string, ProgressRow>>(DB_MOCK_KEYS.PROGRESS, {}));
+
+      return {
+        profiles: allProfiles,
+        documents: allDocs,
+        quizzes: allQuizzes,
+        flashcards: allFlashcards,
+        progress: allProgress
+      };
+    }
+  },
+
+  // Delete a student user and cascade their files/progress
+  async deleteUser(userId: string) {
+    if (!isMock && supabase) {
+      // First try deleting via database (RLS might require an admin trigger, or we can delete cascading records)
+      const { error: pErr } = await supabase.from('profiles').delete().eq('id', userId);
+      if (pErr) throw pErr;
+    } else {
+      let mockUsers = getMockData<MockUser[]>(STORAGE_KEYS.USERS, []);
+      mockUsers = mockUsers.filter(u => u.id !== userId);
+      setMockData(STORAGE_KEYS.USERS, mockUsers);
+
+      const mockProfiles = getMockData<Record<string, UserProfile>>(STORAGE_KEYS.PROFILES, {});
+      delete mockProfiles[userId];
+      setMockData(STORAGE_KEYS.PROFILES, mockProfiles);
+
+      const mockProgress = getMockData<Record<string, ProgressRow>>(DB_MOCK_KEYS.PROGRESS, {});
+      delete mockProgress[userId];
+      setMockData(DB_MOCK_KEYS.PROGRESS, mockProgress);
+
+      let mockDocs = getMockData<DocumentRow[]>(DB_MOCK_KEYS.DOCUMENTS, []);
+      mockDocs = mockDocs.filter(d => d.user_id !== userId);
+      setMockData(DB_MOCK_KEYS.DOCUMENTS, mockDocs);
+
+      let mockQuizzes = getMockData<QuizRow[]>(DB_MOCK_KEYS.QUIZZES, []);
+      mockQuizzes = mockQuizzes.filter(q => q.user_id !== userId);
+      setMockData(DB_MOCK_KEYS.QUIZZES, mockQuizzes);
+
+      let mockFlashcards = getMockData<FlashcardRow[]>(DB_MOCK_KEYS.FLASHCARDS, []);
+      mockFlashcards = mockFlashcards.filter(f => f.user_id !== userId);
+      setMockData(DB_MOCK_KEYS.FLASHCARDS, mockFlashcards);
     }
   }
 };
