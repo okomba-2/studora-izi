@@ -318,7 +318,8 @@ export default function GitHubIntegration({
           owner: selectedRepo.owner.login,
           repo: selectedRepo.name,
           path: selectedFile.path,
-          fileName: selectedFile.name
+          fileName: selectedFile.name,
+          provider: userProfile.ai_provider || 'gemini'
         })
       });
 

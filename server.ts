@@ -22,10 +22,10 @@ async function startServer() {
     res.json({ status: "ok" });
   });
 
-  // Secure API endpoint for Gemini PDF analysis
+  // Secure API endpoint for Gemini and DeepSeek PDF analysis
   app.post("/api/analyze-pdf", async (req, res) => {
     try {
-      const { pdfBase64, fileName } = req.body;
+      const { pdfBase64, fileName, provider } = req.body;
       if (!pdfBase64) {
         return res.status(400).json({ error: "Le contenu du fichier PDF (Base64) est manquant." });
       }
@@ -47,6 +47,99 @@ async function startServer() {
         }
       });
 
+      // Handle DeepSeek Provider if selected and key is present
+      if (provider === 'deepseek') {
+        const deepseekApiKey = process.env.DEEPSEEK_API_KEY;
+        if (!deepseekApiKey) {
+          return res.status(400).json({
+            error: "La clé d'API DeepSeek (DEEPSEEK_API_KEY) n'est pas configurée sur le serveur. Veuillez l'ajouter dans vos variables d'environnement."
+          });
+        }
+
+        console.log("Using Gemini to extract structured text content from PDF...");
+        const extractionResponse = await ai.models.generateContent({
+          model: "gemini-3.5-flash",
+          contents: [
+            {
+              inlineData: {
+                mimeType: "application/pdf",
+                data: pdfBase64,
+              },
+            },
+            "Extrais et liste de manière extrêmement exhaustive et structurée toutes les informations, théories, chapitres, questions, définitions ou formules de ce document pour révision universitaire."
+          ]
+        });
+
+        const extractedText = extractionResponse.text || "";
+        if (!extractedText) {
+          throw new Error("Échec de l'extraction textuelle du PDF par Gemini.");
+        }
+
+        console.log("Calling DeepSeek API (deepseek-chat) for Quiz/Flashcards generation...");
+        const deepseekPrompt = `Analyse ce document d'études ou de révision nommé "${fileName || 'cours.pdf'}".
+Génère un quiz de révision de haute qualité avec 3 à 5 questions à choix multiples (QCM) très précises sur le contenu du document.
+Génère également 3 à 5 flashcards pour mémoriser les définitions importantes ou les formules clés.
+Toutes les questions, options de réponse, explications et flashcards doivent être rédigées en français académique et irréprochable.
+
+Contenu extrait du document :
+---
+${extractedText.substring(0, 15000)}
+---
+
+Tu dois répondre obligatoirement sous forme d'un objet JSON valide respectant strictement ce schéma :
+{
+  "quizTitle": "Un titre court et académique pour le quiz, par exemple 'Quiz : Histologie L1' ou 'Structures Algébriques'.",
+  "questions": [
+    {
+      "question": "La question de révision.",
+      "options": ["Option 1", "Option 2", "Option 3", "Option 4"],
+      "correct": 0, // l'index correct (0, 1, 2, ou 3)
+      "explanation": "Une courte explication didactique de la réponse correcte."
+    }
+  ],
+  "flashcards": [
+    {
+      "front": "Recto : terme, concept ou question.",
+      "back": "Verso : définition, formule ou réponse."
+    }
+  ]
+}`;
+
+        const dsResponse = await fetch("https://api.deepseek.com/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${deepseekApiKey}`
+          },
+          body: JSON.stringify({
+            model: "deepseek-chat",
+            messages: [
+              {
+                role: "system",
+                content: "Tu es un enseignant universitaire expert. Tu réponds uniquement en format JSON brut correspondant strictement au schéma demandé."
+              },
+              {
+                role: "user",
+                content: deepseekPrompt
+              }
+            ],
+            response_format: { type: "json_object" },
+            temperature: 0.1
+          })
+        });
+
+        if (!dsResponse.ok) {
+          const errText = await dsResponse.text();
+          throw new Error(`Erreur API DeepSeek: ${dsResponse.status} - ${errText}`);
+        }
+
+        const dsData: any = await dsResponse.json();
+        const jsonText = dsData.choices[0].message.content.trim();
+        const parsedData = JSON.parse(jsonText);
+        return res.json(parsedData);
+      }
+
+      // Default Gemini flow
       const pdfPart = {
         inlineData: {
           mimeType: "application/pdf",
@@ -130,7 +223,7 @@ Toutes les questions, options de réponse, explications et flashcards doivent ê
       const parsedData = JSON.parse(jsonText);
       res.json(parsedData);
     } catch (error: any) {
-      console.error("Gemini analysis error:", error);
+      console.error("Gemini/DeepSeek analysis error:", error);
       res.status(500).json({ error: error.message || "Erreur interne lors de l'analyse du PDF." });
     }
   });
@@ -350,7 +443,7 @@ Toutes les questions, options de réponse, explications et flashcards doivent ê
   app.post("/api/github/analyze-file", async (req, res) => {
     try {
       const token = getGitHubToken(req);
-      const { owner, repo, path: filePath, contentText, fileName } = req.body;
+      const { owner, repo, path: filePath, contentText, fileName, provider } = req.body;
 
       let finalContent = contentText;
 
@@ -376,6 +469,79 @@ Toutes les questions, options de réponse, explications et flashcards doivent ê
 
       if (!finalContent) {
         return res.status(400).json({ error: "Le contenu du fichier est vide ou introuvable." });
+      }
+
+      // Handle DeepSeek Provider if selected
+      if (provider === 'deepseek') {
+        const deepseekApiKey = process.env.DEEPSEEK_API_KEY;
+        if (!deepseekApiKey) {
+          return res.status(400).json({
+            error: "La clé d'API DeepSeek (DEEPSEEK_API_KEY) n'est pas configurée sur le serveur. Veuillez l'ajouter dans vos variables d'environnement."
+          });
+        }
+
+        console.log("Calling DeepSeek API (deepseek-chat) for GitHub file analysis...");
+        const deepseekPrompt = `Analyse ce fichier d'études ou de programmation universitaire nommé "${fileName || filePath || 'cours.txt'}".
+Contenu du fichier :
+---
+${finalContent.substring(0, 15000)}
+---
+
+Génère un quiz de révision de haute qualité avec 3 à 5 questions à choix multiples (QCM) pour évaluer la compréhension de ce fichier (concepts clés, syntaxe, algorithmes, ou définitions selon le contenu).
+Génère également 3 à 5 flashcards pour mémoriser les notions indispensables de ce fichier.
+Toutes les questions, options de réponse, explications et flashcards doivent être rédigées en français impeccable et de niveau académique.
+
+Tu devez répondre obligatoirement sous forme d'un objet JSON valide respectant strictement ce schéma :
+{
+  "quizTitle": "Un titre court et académique pour le quiz, par exemple 'Quiz : Concepts du fichier X'.",
+  "questions": [
+    {
+      "question": "La question de révision.",
+      "options": ["Option 1", "Option 2", "Option 3", "Option 4"],
+      "correct": 0, // l'index de l'option correcte (0, 1, 2, ou 3)
+      "explanation": "L'explication didactique de la réponse correcte."
+    }
+  ],
+  "flashcards": [
+    {
+      "front": "Recto : terme, concept ou question.",
+      "back": "Verso : réponse ou définition."
+    }
+  ]
+}`;
+
+        const dsResponse = await fetch("https://api.deepseek.com/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${deepseekApiKey}`
+          },
+          body: JSON.stringify({
+            model: "deepseek-chat",
+            messages: [
+              {
+                role: "system",
+                content: "Tu es un enseignant universitaire expert. Tu réponds uniquement en format JSON brut correspondant strictement au schéma demandé."
+              },
+              {
+                role: "user",
+                content: deepseekPrompt
+              }
+            ],
+            response_format: { type: "json_object" },
+            temperature: 0.1
+          })
+        });
+
+        if (!dsResponse.ok) {
+          const errText = await dsResponse.text();
+          throw new Error(`Erreur API DeepSeek: ${dsResponse.status} - ${errText}`);
+        }
+
+        const dsData: any = await dsResponse.json();
+        const jsonText = dsData.choices[0].message.content.trim();
+        const parsedData = JSON.parse(jsonText);
+        return res.json(parsedData);
       }
 
       const apiKey = process.env.GEMINI_API_KEY;
@@ -462,7 +628,7 @@ Toutes les questions, options de réponse, explications et flashcards doivent ê
       const parsedData = JSON.parse(text.trim());
       res.json(parsedData);
     } catch (error: any) {
-      console.error("Gemini GitHub analysis error:", error);
+      console.error("Gemini/DeepSeek GitHub analysis error:", error);
       res.status(500).json({ error: error.message || "Erreur interne lors de l'analyse du fichier GitHub." });
     }
   });

@@ -33,6 +33,7 @@ export interface UserProfile {
   sound_enabled: boolean;
   notifications_enabled: boolean;
   dark_mode: boolean;
+  ai_provider?: 'gemini' | 'deepseek';
   created_at: string;
 }
 
@@ -190,6 +191,7 @@ export const authService = {
         sound_enabled: true,
         notifications_enabled: true,
         dark_mode: false,
+        ai_provider: 'gemini',
         created_at: new Date().toISOString(),
       };
       setMockData(STORAGE_KEYS.PROFILES, profiles);
@@ -377,6 +379,7 @@ export const authService = {
           sound_enabled: true,
           notifications_enabled: true,
           dark_mode: false,
+          ai_provider: 'gemini',
           created_at: new Date().toISOString(),
         };
         setMockData(STORAGE_KEYS.PROFILES, profiles);

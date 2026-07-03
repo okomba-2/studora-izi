@@ -133,6 +133,7 @@ export default function StudentDashboard({ userProfile: initialProfile, onLogout
     daily_study_time: initialProfile.daily_study_time || '',
     sound_enabled: initialProfile.sound_enabled ?? true,
     notifications_enabled: initialProfile.notifications_enabled ?? true,
+    ai_provider: initialProfile.ai_provider || 'gemini',
   });
 
   // Sound and Notifications
@@ -205,6 +206,7 @@ export default function StudentDashboard({ userProfile: initialProfile, onLogout
           daily_study_time: initialProfile.daily_study_time || '',
           sound_enabled: initialProfile.sound_enabled ?? true,
           notifications_enabled: initialProfile.notifications_enabled ?? true,
+          ai_provider: initialProfile.ai_provider || 'gemini',
         });
 
         // Trigger Stats Counter increment anims
@@ -435,6 +437,7 @@ export default function StudentDashboard({ userProfile: initialProfile, onLogout
         body: JSON.stringify({
           pdfBase64,
           fileName: file.name,
+          provider: userProfile.ai_provider || 'gemini',
         }),
       });
 
@@ -687,6 +690,7 @@ export default function StudentDashboard({ userProfile: initialProfile, onLogout
         level: formData.level,
         goal: formData.goal,
         daily_study_time: formData.daily_study_time,
+        ai_provider: formData.ai_provider,
       });
       setUserProfile(updated);
       toast.show('Vos paramètres ont été mis à jour avec succès ! ✨', 'success');
@@ -2254,6 +2258,25 @@ export default function StudentDashboard({ userProfile: initialProfile, onLogout
                               ${notificationsEnabled ? 'left-6' : 'left-1'}
                             `} />
                           </button>
+                        </div>
+
+                        {/* AI Engine Selection Option */}
+                        <div className="flex flex-col p-3.5 bg-slate-50 rounded-xl space-y-2">
+                          <div className="flex items-center space-x-3 text-left">
+                            <Sparkles className="w-5 h-5 text-blue-600 animate-pulse" />
+                            <div>
+                              <span className="block text-xs font-extrabold text-slate-800">Moteur d'Intelligence Artificielle</span>
+                              <span className="block text-[10px] text-slate-400 font-bold">Sélectionnez le modèle d'IA pour vos analyses de cours, quiz et flashcards.</span>
+                            </div>
+                          </div>
+                          <select
+                            value={formData.ai_provider || 'gemini'}
+                            onChange={(e) => setFormData((prev) => ({ ...prev, ai_provider: e.target.value as 'gemini' | 'deepseek' }))}
+                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold focus:outline-hidden focus:border-blue-500 text-slate-700"
+                          >
+                            <option value="gemini">Google Gemini 2.5 Flash (Défaut - Multimodal PDF ultra-rapide)</option>
+                            <option value="deepseek">DeepSeek V3 (Alternative - Idéal pour le code, la synthèse & la logique)</option>
+                          </select>
                         </div>
                       </div>
 
