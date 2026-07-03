@@ -114,7 +114,19 @@ Toutes les questions, options de réponse, explications et flashcards doivent ê
         throw new Error("Le modèle Gemini n'a pas renvoyé de contenu textuel.");
       }
 
-      const parsedData = JSON.parse(text.trim());
+      // Robust JSON extraction
+      let jsonText = text.trim();
+      if (jsonText.startsWith("```")) {
+        const firstBrace = jsonText.indexOf("{");
+        const lastBrace = jsonText.lastIndexOf("}");
+        if (firstBrace !== -1 && lastBrace !== -1) {
+          jsonText = jsonText.substring(firstBrace, lastBrace + 1);
+        } else {
+          jsonText = jsonText.replace(/^```(?:json)?\s*/i, "").replace(/```$/, "").trim();
+        }
+      }
+
+      const parsedData = JSON.parse(jsonText);
       res.json(parsedData);
     } catch (error: any) {
       console.error("Gemini analysis error:", error);

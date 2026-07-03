@@ -73,7 +73,7 @@ export default function FAQ() {
     {
       id: 'subscription',
       question: "Comment fonctionne l'abonnement ?",
-      answer: 'La formule Bêta est 100% gratuite et vous donne accès aux fonctionnalités essentielles. Notre formule Premium à 5000 FCFA/mois augmente vos capacités mensuelles d\'import, multiplie le nombre de quiz générés et débloque le support client prioritaire. L\'abonnement est sans engagement et annulable à tout moment.',
+      answer: 'La formule Bêta est 100% gratuite et vous permet d\'analyser jusqu\'à 3 documents par mois avec toutes les fonctionnalités essentielles. Notre formule Premium à 5000 FCFA/mois augmente vos capacités mensuelles d\'import, multiplie le nombre de quiz générés et débloque le support client prioritaire. L\'abonnement est sans engagement et annulable à tout moment.',
     },
     {
       id: 'security',

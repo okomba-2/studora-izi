@@ -82,6 +82,7 @@ export default function StudentDashboard({ userProfile: initialProfile, onLogout
   const [documents, setDocuments] = useState<DocumentRow[]>([]);
   const [quizzes, setQuizzes] = useState<QuizRow[]>([]);
   const [flashcards, setFlashcards] = useState<FlashcardRow[]>([]);
+  const [selectedFcDocId, setSelectedFcDocId] = useState<string>('all');
   const [progress, setProgress] = useState<ProgressRow | null>(null);
   const [leaderboard, setLeaderboard] = useState<{ name: string; score: number; level: string; isCurrentUser?: boolean }[]>([]);
   const [archivedDocs, setArchivedDocs] = useState<DocumentRow[]>([]);
@@ -662,9 +663,13 @@ export default function StudentDashboard({ userProfile: initialProfile, onLogout
 
     toast.show(`Ancrage mémoriel mis à jour ! +${xpGain} XP`, 'success');
 
+    const activeFcCount = selectedFcDocId === 'all' 
+      ? flashcards.length 
+      : flashcards.filter(fc => fc.document_id === selectedFcDocId).length;
+
     setTimeout(() => {
-      if (flashcards.length > 0) {
-        setFcIndex((prev) => (prev + 1) % flashcards.length);
+      if (activeFcCount > 0) {
+        setFcIndex((prev) => (prev + 1) % activeFcCount);
       }
     }, 200);
   };
@@ -1499,9 +1504,34 @@ export default function StudentDashboard({ userProfile: initialProfile, onLogout
                                   Ajouté le {new Date(doc.created_at).toLocaleDateString('fr-FR')} • {doc.size}
                                 </p>
                               </div>
+
+                              {/* Linked sémantique stats */}
+                              {(() => {
+                                const associatedQuiz = quizzes.find(q => q.document_id === doc.id);
+                                const linkedFcCount = flashcards.filter(fc => fc.document_id === doc.id).length;
+                                return (
+                                  <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold text-slate-500 bg-slate-50/80 p-2.5 rounded-xl border border-slate-100/80 mt-3">
+                                    <div className="flex items-center space-x-1">
+                                      <HelpCircle className="w-3.5 h-3.5 text-emerald-500" />
+                                      <span>
+                                        {associatedQuiz 
+                                          ? (associatedQuiz.completed 
+                                              ? `Quiz (${associatedQuiz.score}/${associatedQuiz.max_score})` 
+                                              : `Quiz (${associatedQuiz.max_score} Qs)`) 
+                                          : 'Aucun quiz'}
+                                      </span>
+                                    </div>
+                                    <div className="w-1 h-1 bg-slate-300 rounded-full" />
+                                    <div className="flex items-center space-x-1">
+                                      <Layers className="w-3.5 h-3.5 text-amber-500" />
+                                      <span>{linkedFcCount} Flashcards</span>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
                             </div>
 
-                            <div className="flex items-center space-x-2 pt-4 mt-4 border-t border-slate-50">
+                            <div className="flex items-center space-x-1.5 pt-4 mt-4 border-t border-slate-50">
                               <button
                                 onClick={() => {
                                   const associatedQuiz = quizzes.find(q => q.document_id === doc.id);
@@ -1510,25 +1540,38 @@ export default function StudentDashboard({ userProfile: initialProfile, onLogout
                                   }
                                   setActiveView('quiz');
                                 }}
-                                className="flex-1 py-2 bg-blue-50 hover:bg-blue-100 text-blue-600 font-black text-xs rounded-xl transition-colors cursor-pointer text-center"
+                                className="flex-1 py-2 bg-blue-50 hover:bg-blue-100 text-blue-600 font-black text-[10px] rounded-lg transition-colors cursor-pointer text-center"
                               >
-                                Réviser
+                                Faire le Quiz
+                              </button>
+
+                              <button
+                                onClick={() => {
+                                  playClickSound();
+                                  setSelectedFcDocId(doc.id);
+                                  setFcIndex(0);
+                                  setFcFlipped(false);
+                                  setActiveView('flashcards');
+                                }}
+                                className="flex-1 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 font-black text-[10px] rounded-lg transition-colors cursor-pointer text-center"
+                              >
+                                Flashcards
                               </button>
 
                               <button
                                 onClick={() => handleArchiveDoc(doc.id, doc.name)}
-                                className="p-2 hover:bg-slate-50 rounded-xl text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                                className="p-2 hover:bg-slate-50 rounded-lg text-slate-400 hover:text-slate-600 transition-colors cursor-pointer shrink-0"
                                 title="Archiver"
                               >
-                                <Archive className="w-4 h-4" />
+                                <Archive className="w-3.5 h-3.5" />
                               </button>
 
                               <button
                                 onClick={() => handleDeleteDoc(doc.id, doc.name)}
-                                className="p-2 hover:bg-red-50 rounded-xl text-slate-400 hover:text-red-500 transition-colors cursor-pointer"
+                                className="p-2 hover:bg-red-50 rounded-lg text-slate-400 hover:text-red-500 transition-colors cursor-pointer shrink-0"
                                 title="Supprimer définitivement"
                               >
-                                <Trash2 className="w-4 h-4" />
+                                <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             </div>
                           </motion.div>
@@ -1561,6 +1604,14 @@ export default function StudentDashboard({ userProfile: initialProfile, onLogout
                                   <HelpCircle className="w-5.5 h-5.5" />
                                 </div>
                                 <h4 className="font-extrabold text-slate-800 text-sm line-clamp-1">{q.title}</h4>
+                                {q.document_id && (
+                                  <div className="flex items-center space-x-1.5 mt-1.5 text-slate-500 bg-slate-50 p-1.5 rounded-lg border border-slate-100">
+                                    <FileText className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                    <span className="text-[10px] font-bold truncate" title={documents.find(d => d.id === q.document_id)?.name || archivedDocs.find(d => d.id === q.document_id)?.name || 'Document'}>
+                                      Cours : {documents.find(d => d.id === q.document_id)?.name || archivedDocs.find(d => d.id === q.document_id)?.name || 'Analyse sémantique'}
+                                    </span>
+                                  </div>
+                                )}
                                 <p className="text-[10px] text-slate-400 font-bold">
                                   Nombre de questions : {q.max_score} • {q.completed ? `Dernier score : ${q.score}/${q.max_score}` : 'Non commencé'}
                                 </p>
@@ -1693,102 +1744,162 @@ export default function StudentDashboard({ userProfile: initialProfile, onLogout
                       <p className="text-xs text-slate-400 font-bold mt-1">Réactivez votre mémoire en testant vos connaissances fiches par fiches.</p>
                     </div>
 
-                    {flashcards.length === 0 ? (
-                      <div className="bg-white p-12 rounded-[20px] text-center border border-slate-100 space-y-4">
-                        <Layers className="w-10 h-10 text-slate-300 mx-auto" />
-                        <h3 className="font-extrabold text-slate-700">Aucune flashcard disponible.</h3>
-                        <p className="text-xs text-slate-400 max-w-sm mx-auto">Veuillez d'abord importer un document ou un cours pour générer des fiches automatiques.</p>
-                        <button
-                          onClick={() => triggerQuickAction('import')}
-                          className="px-4 py-2 bg-blue-600 text-white text-xs font-black rounded-xl cursor-pointer"
+                    {/* Document Filter Dropdown */}
+                    {flashcards.length > 0 && (
+                      <div className="bg-white p-4 rounded-2xl border border-slate-100 flex flex-col gap-2 shadow-xs">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Filtrer par Document / Cours :</label>
+                        <select
+                          value={selectedFcDocId}
+                          onChange={(e) => {
+                            playClickSound();
+                            setSelectedFcDocId(e.target.value);
+                            setFcIndex(0);
+                            setFcFlipped(false);
+                          }}
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200/60 rounded-xl text-xs font-semibold text-slate-700 focus:outline-hidden focus:border-blue-500 cursor-pointer"
                         >
-                          Importer mon premier cours
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="space-y-6">
-                        
-                        {/* 3D Fliping Flashcard wrapper */}
-                        <div
-                          onClick={() => { playClickSound(); setFcFlipped(!fcFlipped); }}
-                          className="relative h-72 cursor-pointer perspective-1000 group select-none"
-                        >
-                          <motion.div
-                            className="relative w-full h-full duration-500 preserve-3d"
-                            animate={{ rotateY: fcFlipped ? 180 : 0 }}
-                            transition={{ duration: 0.4, ease: 'easeOut' }}
-                          >
-                            {/* FRONT SIDE CARD */}
-                            <div className="absolute inset-0 w-full h-full bg-white border border-slate-100 rounded-[24px] shadow-md p-6 flex flex-col justify-between text-center backface-hidden">
-                              <div className="flex justify-between items-center text-slate-400 text-[10px] font-black uppercase">
-                                <span>Recto • Définition</span>
-                                <span className="bg-blue-50 text-blue-600 px-2 py-0.5 rounded-md">Fiche {fcIndex + 1}/{flashcards.length}</span>
-                              </div>
-                              <h3 className="text-base md:text-lg font-black text-slate-800 px-4 leading-normal">
-                                {flashcards[fcIndex].front}
-                              </h3>
-                              <span className="text-[10px] text-blue-600 font-black animate-pulse">Cliquer pour retourner la carte</span>
-                            </div>
-
-                            {/* BACK SIDE CARD */}
-                            <div className="absolute inset-0 w-full h-full bg-slate-900 border border-slate-800 rounded-[24px] shadow-xl p-6 flex flex-col justify-between text-center rotate-y-180 backface-hidden text-white">
-                              <div className="flex justify-between items-center text-slate-500 text-[10px] font-black uppercase">
-                                <span>Verso • Explication</span>
-                                <span className="bg-white/10 text-white px-2 py-0.5 rounded-md">Répétition active</span>
-                              </div>
-                              <p className="text-xs md:text-sm text-slate-200 px-4 leading-relaxed font-semibold">
-                                {flashcards[fcIndex].back}
-                              </p>
-                              <span className="text-[10px] text-slate-500 font-black">Cliquer pour re-consulter la question</span>
-                            </div>
-
-                          </motion.div>
-                        </div>
-
-                        {/* Interactive repetition indicator tools */}
-                        <div className="bg-white p-4 rounded-[20px] border border-slate-100 flex justify-around gap-2 shadow-xs">
-                          <button
-                            onClick={() => handleFlashcardFeedback('hard')}
-                            className="flex-1 py-3 border border-red-100 hover:bg-red-50 text-red-600 text-xs font-black rounded-xl transition-all cursor-pointer text-center"
-                          >
-                            🔴 Difficile (+5 XP)
-                          </button>
-                          <button
-                            onClick={() => handleFlashcardFeedback('medium')}
-                            className="flex-1 py-3 border border-amber-100 hover:bg-amber-50 text-amber-600 text-xs font-black rounded-xl transition-all cursor-pointer text-center"
-                          >
-                            🟡 Moyen (+10 XP)
-                          </button>
-                          <button
-                            onClick={() => handleFlashcardFeedback('easy')}
-                            className="flex-1 py-3 border border-emerald-100 hover:bg-emerald-50 text-emerald-600 text-xs font-black rounded-xl transition-all cursor-pointer text-center"
-                          >
-                            🟢 Facile (+15 XP)
-                          </button>
-                        </div>
-
-                        {/* Pagination indicator */}
-                        <div className="flex justify-between items-center px-2 text-xs font-bold text-slate-400">
-                          <span>Studora flashcard deck</span>
-                          <div className="flex items-center space-x-2">
-                            <button
-                              onClick={() => { playClickSound(); setFcIndex((prev) => (prev - 1 + flashcards.length) % flashcards.length); }}
-                              className="p-1 hover:bg-slate-100 rounded-lg text-slate-500"
-                            >
-                              <ChevronLeft className="w-4 h-4" />
-                            </button>
-                            <span>{fcIndex + 1} / {flashcards.length}</span>
-                            <button
-                              onClick={() => { playClickSound(); setFcIndex((prev) => (prev + 1) % flashcards.length); }}
-                              className="p-1 hover:bg-slate-100 rounded-lg text-slate-500"
-                            >
-                              <ChevronRight className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </div>
-
+                          <option value="all">📚 Toutes les flashcards ({flashcards.length})</option>
+                          {documents.map(doc => {
+                            const docFcCount = flashcards.filter(fc => fc.document_id === doc.id).length;
+                            if (docFcCount === 0) return null;
+                            return (
+                              <option key={doc.id} value={doc.id}>
+                                📄 {doc.name} ({docFcCount})
+                              </option>
+                            );
+                          })}
+                          {archivedDocs.map(doc => {
+                            const docFcCount = flashcards.filter(fc => fc.document_id === doc.id).length;
+                            if (docFcCount === 0) return null;
+                            return (
+                              <option key={doc.id} value={doc.id}>
+                                🗄️ [Archivé] {doc.name} ({docFcCount})
+                              </option>
+                            );
+                          })}
+                        </select>
                       </div>
                     )}
+
+                    {(() => {
+                      const filteredFcs = selectedFcDocId === 'all'
+                        ? flashcards
+                        : flashcards.filter(fc => fc.document_id === selectedFcDocId);
+
+                      const activeFcIndex = Math.min(fcIndex, Math.max(0, filteredFcs.length - 1));
+
+                      if (filteredFcs.length === 0) {
+                        return (
+                          <div className="bg-white p-12 rounded-[20px] text-center border border-slate-100 space-y-4">
+                            <Layers className="w-10 h-10 text-slate-300 mx-auto" />
+                            <h3 className="font-extrabold text-slate-700">Aucune flashcard disponible.</h3>
+                            <p className="text-xs text-slate-400 max-w-sm mx-auto">Veuillez d'abord importer un document ou un cours pour générer des fiches automatiques.</p>
+                            <button
+                              onClick={() => triggerQuickAction('import')}
+                              className="px-4 py-2 bg-blue-600 text-white text-xs font-black rounded-xl cursor-pointer"
+                            >
+                              Importer mon premier cours
+                            </button>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="space-y-6">
+                          
+                          {/* 3D Fliping Flashcard wrapper */}
+                          <div
+                            onClick={() => { playClickSound(); setFcFlipped(!fcFlipped); }}
+                            className="relative h-72 cursor-pointer perspective-1000 group select-none"
+                          >
+                            <motion.div
+                              className="relative w-full h-full duration-500 preserve-3d"
+                              animate={{ rotateY: fcFlipped ? 180 : 0 }}
+                              transition={{ duration: 0.4, ease: 'easeOut' }}
+                            >
+                              {/* FRONT SIDE CARD */}
+                              <div className="absolute inset-0 w-full h-full bg-white border border-slate-100 rounded-[24px] shadow-md p-6 flex flex-col justify-between text-center backface-hidden">
+                                <div className="flex justify-between items-center text-slate-400 text-[10px] font-black uppercase">
+                                  <span>Recto • Définition</span>
+                                  <span className="bg-blue-50 text-blue-600 px-2 py-0.5 rounded-md">Fiche {activeFcIndex + 1}/{filteredFcs.length}</span>
+                                </div>
+                                <div className="space-y-3 my-auto">
+                                  <h3 className="text-base md:text-lg font-black text-slate-800 px-4 leading-normal">
+                                    {filteredFcs[activeFcIndex].front}
+                                  </h3>
+                                  {(() => {
+                                    const docId = filteredFcs[activeFcIndex].document_id;
+                                    const docName = documents.find(d => d.id === docId)?.name || archivedDocs.find(d => d.id === docId)?.name;
+                                    return docName ? (
+                                      <span className="inline-flex items-center space-x-1 bg-slate-50 px-2 py-1 rounded-md text-[9px] font-bold text-slate-400 border border-slate-100 max-w-[280px] mx-auto truncate">
+                                        <FileText className="w-3 h-3 text-slate-400" />
+                                        <span className="truncate">{docName}</span>
+                                      </span>
+                                    ) : null;
+                                  })()}
+                                </div>
+                                <span className="text-[10px] text-blue-600 font-black animate-pulse">Cliquer pour retourner la carte</span>
+                              </div>
+
+                              {/* BACK SIDE CARD */}
+                              <div className="absolute inset-0 w-full h-full bg-slate-900 border border-slate-800 rounded-[24px] shadow-xl p-6 flex flex-col justify-between text-center rotate-y-180 backface-hidden text-white">
+                                <div className="flex justify-between items-center text-slate-500 text-[10px] font-black uppercase">
+                                  <span>Verso • Explication</span>
+                                  <span className="bg-white/10 text-white px-2 py-0.5 rounded-md">Répétition active</span>
+                                </div>
+                                <p className="text-xs md:text-sm text-slate-200 px-4 leading-relaxed font-semibold my-auto">
+                                  {filteredFcs[activeFcIndex].back}
+                                </p>
+                                <span className="text-[10px] text-slate-500 font-black">Cliquer pour re-consulter la question</span>
+                              </div>
+
+                            </motion.div>
+                          </div>
+
+                          {/* Interactive repetition indicator tools */}
+                          <div className="bg-white p-4 rounded-[20px] border border-slate-100 flex justify-around gap-2 shadow-xs">
+                            <button
+                              onClick={() => handleFlashcardFeedback('hard')}
+                              className="flex-1 py-3 border border-red-100 hover:bg-red-50 text-red-600 text-xs font-black rounded-xl transition-all cursor-pointer text-center"
+                            >
+                              🔴 Difficile (+5 XP)
+                            </button>
+                            <button
+                              onClick={() => handleFlashcardFeedback('medium')}
+                              className="flex-1 py-3 border border-amber-100 hover:bg-amber-50 text-amber-600 text-xs font-black rounded-xl transition-all cursor-pointer text-center"
+                            >
+                              🟡 Moyen (+10 XP)
+                            </button>
+                            <button
+                              onClick={() => handleFlashcardFeedback('easy')}
+                              className="flex-1 py-3 border border-emerald-100 hover:bg-emerald-50 text-emerald-600 text-xs font-black rounded-xl transition-all cursor-pointer text-center"
+                            >
+                              🟢 Facile (+15 XP)
+                            </button>
+                          </div>
+
+                          {/* Pagination indicator */}
+                          <div className="flex justify-between items-center px-2 text-xs font-bold text-slate-400">
+                            <span>Studora flashcard deck</span>
+                            <div className="flex items-center space-x-2">
+                              <button
+                                onClick={() => { playClickSound(); setFcIndex((prev) => (prev - 1 + filteredFcs.length) % filteredFcs.length); }}
+                                className="p-1 hover:bg-slate-100 rounded-lg text-slate-500 cursor-pointer"
+                              >
+                                <ChevronLeft className="w-4 h-4" />
+                              </button>
+                              <span>{activeFcIndex + 1} / {filteredFcs.length}</span>
+                              <button
+                                onClick={() => { playClickSound(); setFcIndex((prev) => (prev + 1) % filteredFcs.length); }}
+                                className="p-1 hover:bg-slate-100 rounded-lg text-slate-500 cursor-pointer"
+                              >
+                                <ChevronRight className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
 

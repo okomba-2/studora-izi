@@ -69,10 +69,10 @@ export default function Pricing({ onNavigate }: PricingProps = {}) {
               {/* Feature List */}
               <ul className="space-y-4 mb-8">
                 {[
-                  '1 document par mois',
-                  '1 résumé structuré',
-                  '1 quiz d\'évaluation',
-                  'Historique de 7 jours',
+                  '3 documents gratuits par mois',
+                  '3 résumés structurés',
+                  '3 quiz d\'évaluation',
+                  'Historique complet de révision',
                 ].map((feat, idx) => (
                   <li key={idx} className="flex items-center space-x-3 text-sm font-semibold text-slate-600">
                     <div className="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 shrink-0">
