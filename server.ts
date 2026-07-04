@@ -13,9 +13,9 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  // Increase payload limit for base64 PDFs up to 50mb to accommodate up to 30mb PDF files
-  app.use(express.json({ limit: "50mb" }));
-  app.use(express.urlencoded({ limit: "50mb", extended: true }));
+  // Increase payload limit for base64 PDFs up to 120mb to accommodate up to 100mb PDF files without any page or size limitations
+  app.use(express.json({ limit: "120mb" }));
+  app.use(express.urlencoded({ limit: "120mb", extended: true }));
 
   // API health check
   app.get("/api/health", (req, res) => {
@@ -154,54 +154,106 @@ Génère également 3 à 5 flashcards pour mémoriser les définitions important
 Toutes les questions, options de réponse, explications et flashcards doivent être en français académique et irréprochable.`,
       };
 
-      // Call Gemini 3.5 Flash for high speed, native PDF understanding and robust schema extraction
-      const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
-        contents: { parts: [pdfPart, textPart] },
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              quizTitle: {
-                type: Type.STRING,
-                description: "Un titre court et académique pour le quiz, par exemple 'Quiz : Histologie L1' ou 'Structures Algébriques'."
-              },
-              questions: {
-                type: Type.ARRAY,
-                description: "Une liste de 3 à 5 questions à choix multiples basées sur le document.",
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    question: { type: Type.STRING, description: "La question de révision." },
-                    options: {
-                      type: Type.ARRAY,
-                      items: { type: Type.STRING },
-                      description: "3 à 4 options de réponse exclusives."
+      // Call Gemini with high speed, native PDF understanding and robust schema extraction
+      let response;
+      try {
+        response = await ai.models.generateContent({
+          model: "gemini-3.5-flash",
+          contents: { parts: [pdfPart, textPart] },
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                quizTitle: {
+                  type: Type.STRING,
+                  description: "Un titre court et académique pour le quiz, par exemple 'Quiz : Histologie L1' ou 'Structures Algébriques'."
+                },
+                questions: {
+                  type: Type.ARRAY,
+                  description: "Une liste de 3 à 5 questions à choix multiples basées sur le document.",
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      question: { type: Type.STRING, description: "La question de révision." },
+                      options: {
+                        type: Type.ARRAY,
+                        items: { type: Type.STRING },
+                        description: "3 à 4 options de réponse exclusives."
+                      },
+                      correct: { type: Type.INTEGER, description: "L'index correct (0, 1, 2, ou 3)." },
+                      explanation: { type: Type.STRING, description: "Une courte explication de la réponse correcte." }
                     },
-                    correct: { type: Type.INTEGER, description: "L'index correct (0, 1, 2, ou 3)." },
-                    explanation: { type: Type.STRING, description: "Une courte explication de la réponse correcte." }
-                  },
-                  required: ["question", "options", "correct", "explanation"]
+                    required: ["question", "options", "correct", "explanation"]
+                  }
+                },
+                flashcards: {
+                  type: Type.ARRAY,
+                  description: "Une liste de 3 à 5 flashcards basées sur le document.",
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      front: { type: Type.STRING, description: "Recto : terme, concept ou question." },
+                      back: { type: Type.STRING, description: "Verso : définition, formule ou réponse." }
+                    },
+                    required: ["front", "back"]
+                  }
                 }
               },
-              flashcards: {
-                type: Type.ARRAY,
-                description: "Une liste de 3 à 5 flashcards basées sur le document.",
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    front: { type: Type.STRING, description: "Recto : terme, concept ou question." },
-                    back: { type: Type.STRING, description: "Verso : définition, formule ou réponse." }
-                  },
-                  required: ["front", "back"]
-                }
-              }
-            },
-            required: ["quizTitle", "questions", "flashcards"]
+              required: ["quizTitle", "questions", "flashcards"]
+            }
           }
-        }
-      });
+        });
+      } catch (primaryModelError: any) {
+        console.warn("Primary model 'gemini-3.5-flash' failed or timed out, trying fallback model 'gemini-flash-latest'...", primaryModelError);
+        response = await ai.models.generateContent({
+          model: "gemini-flash-latest",
+          contents: { parts: [pdfPart, textPart] },
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                quizTitle: {
+                  type: Type.STRING,
+                  description: "Un titre court et académique pour le quiz, par exemple 'Quiz : Histologie L1' ou 'Structures Algébriques'."
+                },
+                questions: {
+                  type: Type.ARRAY,
+                  description: "Une liste de 3 à 5 questions à choix multiples basées sur le document.",
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      question: { type: Type.STRING, description: "La question de révision." },
+                      options: {
+                        type: Type.ARRAY,
+                        items: { type: Type.STRING },
+                        description: "3 à 4 options de réponse exclusives."
+                      },
+                      correct: { type: Type.INTEGER, description: "L'index correct (0, 1, 2, ou 3)." },
+                      explanation: { type: Type.STRING, description: "Une courte explication de la réponse correcte." }
+                    },
+                    required: ["question", "options", "correct", "explanation"]
+                  }
+                },
+                flashcards: {
+                  type: Type.ARRAY,
+                  description: "Une liste de 3 à 5 flashcards basées sur le document.",
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      front: { type: Type.STRING, description: "Recto : terme, concept ou question." },
+                      back: { type: Type.STRING, description: "Verso : définition, formule ou réponse." }
+                    },
+                    required: ["front", "back"]
+                  }
+                }
+              },
+              required: ["quizTitle", "questions", "flashcards"]
+            }
+          }
+        });
+      }
 
       const text = response.text;
       if (!text) {
@@ -219,6 +271,11 @@ Toutes les questions, options de réponse, explications et flashcards doivent ê
           jsonText = jsonText.replace(/^```(?:json)?\s*/i, "").replace(/```$/, "").trim();
         }
       }
+
+      // Sanitize trailing commas in array/object properties that can break JSON.parse
+      jsonText = jsonText
+        .replace(/,\s*\]/g, "]")
+        .replace(/,\s*\}/g, "}");
 
       const parsedData = JSON.parse(jsonText);
       res.json(parsedData);

@@ -379,11 +379,11 @@ export default function StudentDashboard({ userProfile: initialProfile, onLogout
       return;
     }
 
-    // Limit check (30 MB)
-    const maxBytes = 30 * 1024 * 1024;
+    // Limit check (Increased to 100 MB for zero restriction experience)
+    const maxBytes = 100 * 1024 * 1024;
     if (file.size > maxBytes) {
       playFailureSound();
-      toast.show('Limite dépassée : Le fichier ne doit pas excéder 30 Mo.', 'warning');
+      toast.show('Limite dépassée : Le fichier ne doit pas excéder 100 Mo.', 'warning');
       return;
     }
 
@@ -1170,11 +1170,11 @@ export default function StudentDashboard({ userProfile: initialProfile, onLogout
                               Formats acceptés : PDF contenant du texte
                             </p>
                             <div className="mt-3 flex flex-wrap gap-2 justify-center">
-                              <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 bg-slate-100 rounded-md text-slate-500">
-                                Max 200 pages
+                              <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-md">
+                                Pas de limite de pages ni de mots ✨
                               </span>
-                              <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 bg-slate-100 rounded-md text-slate-500">
-                                Max 30 Mo
+                              <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 bg-blue-50 text-blue-600 border border-blue-100 rounded-md">
+                                Max 100 Mo
                               </span>
                             </div>
                           </div>
